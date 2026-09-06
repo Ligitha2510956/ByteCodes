@@ -1,0 +1,18 @@
+# Raw dataset - large, mostly regenerable via get_*.py scripts
+data/
+
+# Personal test/demo audio files - not needed to run the project
+my_voice*.wav
+my_voice*.mp3
+test_fake*.wav
+test_fake*.mp3
+debug_last_chunk.wav
+phone_compressed.wav
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
