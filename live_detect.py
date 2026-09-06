@@ -25,7 +25,7 @@ def predict_chunk(audio):
     confidence = probs[pred].item() * 100
     return label, confidence
 
-WINDOW_SIZE = 5  # how many recent chunks to average over for the session-level verdict
+WINDOW_SIZE = 6# how many recent chunks to average over for the session-level verdict
 history = deque(maxlen=WINDOW_SIZE)
 
 print("🎙️  Listening... speak into your microphone. Press Ctrl+C to stop.\n")
@@ -50,9 +50,9 @@ try:
         smoothed_fake_score = sum(history) / len(history)
         smoothed_confidence = smoothed_fake_score * 100
 
-        if smoothed_fake_score >= 0.45:
+        if smoothed_fake_score >= 0.55:
             risk = "🔴 Deepfake"
-        elif smoothed_fake_score <= 0.25:
+        elif smoothed_fake_score <= 0.35:
             risk = "🟢 Genuine"
         else:
             risk = "🟡 Suspicious"
