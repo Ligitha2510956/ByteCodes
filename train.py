@@ -4,8 +4,13 @@ import numpy as np
 import librosa
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix
+)
 
 SAMPLE_RATE = 16000
 DURATION = 3
@@ -118,8 +123,18 @@ def train_model():
     train_loader = DataLoader(torch.utils.data.Subset(dataset, train_idx), batch_size=8, shuffle=True)
     test_loader = DataLoader(torch.utils.data.Subset(dataset, test_idx), batch_size=8)
 
+    # --- Class weights to fix "always genuine" bias from imbalance ---
+    train_labels = [labels[i] for i in train_idx]
+    n_real = train_labels.count(0)
+    n_fake = train_labels.count(1)
+    total = n_real + n_fake
+    weight_real = total / (2 * n_real)
+    weight_fake = total / (2 * n_fake)
+    class_weights = torch.tensor([weight_real, weight_fake], dtype=torch.float32)
+    print(f"Class counts -> real: {n_real}, fake: {n_fake}, weights: {class_weights.tolist()}")
+
     model = DeepfakeCNN()
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
 
     EPOCHS = 10
@@ -136,17 +151,40 @@ def train_model():
 
         print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {total_loss:.4f}")
 
+    # --- Evaluation with full metrics ---
     model.eval()
-    correct = 0
-    total = 0
+    all_preds = []
+    all_labels = []
+    all_probs_fake = []  # probability of class 1 (fake) — needed for ROC-AUC
+
     with torch.no_grad():
         for mels, labels_batch in test_loader:
             outputs = model(mels)
+            probs = F.softmax(outputs, dim=1)
             predicted = torch.argmax(outputs, dim=1)
-            correct += (predicted == labels_batch).sum().item()
-            total += labels_batch.size(0)
 
-    print(f"Test Accuracy: {100 * correct / total:.2f}%")
+            all_preds.extend(predicted.tolist())
+            all_labels.extend(labels_batch.tolist())
+            all_probs_fake.extend(probs[:, 1].tolist())
+
+    accuracy = accuracy_score(all_labels, all_preds)
+    precision = precision_score(all_labels, all_preds, zero_division=0)
+    recall = recall_score(all_labels, all_preds, zero_division=0)
+    f1 = f1_score(all_labels, all_preds, zero_division=0)
+
+    try:
+        auc = roc_auc_score(all_labels, all_probs_fake)
+    except ValueError:
+        auc = float("nan")  # only one class present in test set
+
+    cm = confusion_matrix(all_labels, all_preds)
+
+    print(f"Test Accuracy:  {accuracy*100:.2f}%")
+    print(f"Precision:      {precision:.4f}")
+    print(f"Recall:         {recall:.4f}")
+    print(f"F1 Score:       {f1:.4f}")
+    print(f"ROC-AUC:        {auc:.4f}")
+    print(f"Confusion Matrix (rows=true, cols=pred, 0=real,1=fake):\n{cm}")
     print(f"(Train samples: {len(train_idx)}, Test samples: {len(test_idx)}, "
           f"grouped by {len(unique_bases)} unique base clips)")
 
